@@ -3,6 +3,13 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* Define to 1 if you have the `GraphicsMagick' library (-lGraphicsMagick). */
+#undef HAVE_LIBGRAPHICSMAGICK
+
+/* Define to 1 if you have the `GraphicsMagickWand' library
+   (-lGraphicsMagickWand). */
+#undef HAVE_LIBGRAPHICSMAGICKWAND
+
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
 
@@ -26,6 +33,9 @@
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
+
+/* Define to 1 if you have the <wand/wand_api.h> header file. */
+#undef HAVE_WAND_WAND_API_H
 
 /* Name of package */
 #undef PACKAGE
