@@ -1,0 +1,35 @@
+# RPM Spec file for @PACKAGE_NAME@
+
+Name:      @PACKAGE_NAME@
+Version:   @PACKAGE_VERSION@
+Release:   1%{?dist}
+Summary:   Image filtering for Apache httpd server
+License:   ASL 2.0
+Group:     System Environment/Daemons
+Source:    https://github.com/minfrin/%{name}/releases/download/%{name}-%{version}/%{name}-%{version}.tar.bz2
+Url:       https://github.com/minfrin/%{name}
+BuildRequires: gcc, pkgconfig(apr-1), pkgconfig(apr-util-1), pkgconfig(libical)
+Requires:  httpd
+
+%if 0%{?is_opensuse}
+%define moduledir %{_libdir}/apache2
+%else
+%define moduledir %{_libdir}/httpd/modules
+%endif
+
+%description
+The Apache mod_magick filter provides image filtering for requests.
+
+%prep
+%setup -q
+%build
+%configure
+%make_build
+
+%install
+%make_install
+
+%files
+%{moduledir}/%{name}.so
+
+
