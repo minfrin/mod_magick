@@ -51,12 +51,10 @@ fi
 # Checks for libraries.
 PKG_CHECK_MODULES(GraphicsMagick, GraphicsMagick >= 1.3.0)
 PKG_CHECK_MODULES(GraphicsMagickWand, GraphicsMagickWand >= 1.3.0)
-PKG_CHECK_MODULES(apr, apr-1 >= 1.3)
-PKG_CHECK_MODULES(apu, apr-util-1 >= 1.3)
 
-CFLAGS="$CFLAGS $GraphicsMagick_CFLAGS $GraphicsMagickWand_CFLAGS $apr_CFLAGS $apu_CFLAGS"
-CPPFLAGS="$CPPFLAGS $GraphicsMagick_CFLAGS $GraphicsMagickWand_CPPFLAGS $apr_CPPFLAGS $apu_CPPFLAGS"
-LDFLAGS="$LDFLAGS $GraphicsMagick_LIBS $GraphicsMagickWand_LIBS $apr_LIBS $apu_LIBS"
+CFLAGS="$CFLAGS $GraphicsMagick_CFLAGS $GraphicsMagickWand_CFLAGS"
+CPPFLAGS="$CPPFLAGS $GraphicsMagick_CFLAGS $GraphicsMagickWand_CPPFLAGS"
+LDFLAGS="$LDFLAGS $GraphicsMagick_LIBS $GraphicsMagickWand_LIBS"
 
 # Checks for header files.
 AC_CHECK_HEADERS([wand/wand_api.h], , AC_MSG_ERROR([wand/wand_api.h was not found.]))

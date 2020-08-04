@@ -219,8 +219,16 @@ static void magick_bucket_destroy(void *data)
     }
 }
 
-AP_DECLARE(apr_bucket *) ap_bucket_magick_make(apr_bucket *b,
-                                               MagickWand *wand,
+AP_DECLARE_DATA const apr_bucket_type_t ap_bucket_type_magick = {
+    "MAGICK", 5, APR_BUCKET_DATA,
+    magick_bucket_destroy,
+    magick_bucket_read,
+    apr_bucket_setaside_noop, /* don't need to setaside thanks to the cleanup*/
+    apr_bucket_shared_split,
+    apr_bucket_shared_copy
+};
+
+AP_DECLARE(apr_bucket *) ap_bucket_magick_make(apr_bucket *b, MagickWand *wand,
                                                apr_pool_t *p)
 {
     ap_bucket_magick *m;
@@ -256,15 +264,6 @@ AP_DECLARE(apr_bucket *) ap_bucket_magick_create(apr_bucket_alloc_t *list,
     b->list = list;
     return ap_bucket_magick_make(b, wand, p);
 }
-
-APU_DECLARE_DATA const apr_bucket_type_t ap_bucket_type_magick = {
-    "MAGICK", 5, APR_BUCKET_DATA,
-    magick_bucket_destroy,
-    magick_bucket_read,
-    apr_bucket_setaside_noop, /* don't need to setaside thanks to the cleanup*/
-    apr_bucket_shared_split,
-    apr_bucket_shared_copy
-};
 
 static apr_status_t magick_wand_cleanup(void *data)
 {
