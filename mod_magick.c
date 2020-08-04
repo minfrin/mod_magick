@@ -24,6 +24,11 @@
  * Basic configuration:
  *
  * <Location />
+ *   <IfModule magick_module>
+ *     <If "%{QUERY_STRING} =~ /./">
+ *       SetOutputFilter MAGICK
+ *     </If>
+ *   </IfModule>
  * </Location>
  *
  */
@@ -284,14 +289,6 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 
     /* first time in? create a context */
     if (!ctx) {
-
-        /* should we just step out of the way? */
-        /* TODO: don't consume whole query string */
-        if (!r->args) {
-            ap_remove_output_filter(f);
-            return ap_pass_brigade(f->next, bb);
-        }
-
         ctx = f->ctx = apr_pcalloc(r->pool, sizeof(*ctx));
         ctx->bb = apr_brigade_create(r->pool, f->c->bucket_alloc);
     }
