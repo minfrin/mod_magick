@@ -1,4 +1,4 @@
-EXTRA_DIST = mod_magick.c mod_magick.spec
+EXTRA_DIST = mod_magick.c mod_magick.h mod_magick.spec
 
 all-local:
 	$(APXS) "-Wc,${CFLAGS}" -c -c $(DEF_LDLIBS) -Wc,"$(CFLAGS)" -Wc,"$(AM_CFLAGS)" -Wl,"$(LDFLAGS)" -Wl,"$(AM_LDFLAGS)" $(LIBS) @srcdir@/mod_magick.c
