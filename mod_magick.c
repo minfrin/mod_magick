@@ -58,7 +58,7 @@ typedef struct magick_conf {
 typedef struct magick_ctx {
     apr_bucket_brigade *bb;
     apr_bucket_brigade *tmp;
-    apr_off_t seen_bytes;
+    apr_size_t seen_bytes;
     int seen_buckets;
     int seen_eos;
 } magick_ctx;
@@ -294,7 +294,7 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     }
 
     if (ctx->seen_eos) {
-        const unsigned char *data;
+        unsigned char *data;
         apr_bucket *e;
         ap_bucket_magick *m;
 
@@ -304,7 +304,8 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 
         m = e->data;
 
-        apr_brigade_pflatten(ctx->bb, (char **)&data, &size, r->pool);
+        data = MagickMalloc(ctx->seen_bytes);
+        apr_brigade_flatten(ctx->bb, (char *)data, &ctx->seen_bytes);
 
         if (!MagickReadImageBlob(m->wand, data, size)) {
             char *description;
@@ -316,8 +317,10 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
                     severity);
             MagickRelinquishMemory(description);
 
+            MagickFree(data);
             return APR_EGENERAL;
         }
+        MagickFree(data);
 
         /* pass what we have left down the chain */
         ap_remove_output_filter(f);
