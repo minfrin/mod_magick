@@ -58,7 +58,6 @@ typedef struct magick_conf {
 typedef struct magick_ctx {
     apr_bucket_brigade *bb;
     apr_bucket_brigade *tmp;
-    MagickWand *wand;
     apr_off_t seen_bytes;
     int seen_buckets;
     int seen_eos;
@@ -134,58 +133,23 @@ static const command_rec magick_cmds[] = {
                 "Maximum size of the image processed by the magick filter")
 };
 
-static apr_status_t magick_bucket_cleanup(void *data)
-{
-    ap_bucket_magick *m = data;
-
-    /*
-     * If the pool gets cleaned up, we have to copy the data out
-     * of the pool and onto the heap.  But the apr_buckets out there
-     * that point to this magick bucket need to be notified such that
-     * they can morph themselves into a regular heap bucket the next
-     * time they try to read.  To avoid having to manipulate
-     * reference counts and b->data pointers, the ap_bucket_magick
-     * actually _contains_ an apr_bucket_heap as its first element,
-     * so the two share their apr_bucket_refcount member, and you
-     * can typecast a magick bucket struct to make it look like a
-     * regular old heap bucket struct.
-     */
-    m->heap.base = apr_bucket_alloc(m->heap.alloc_len, m->list);
-    memcpy(m->heap.base, m->base, m->heap.alloc_len);
-
-    if (m->base) {
-        MagickRelinquishMemory((void *)m->base);
-        m->base = NULL;
-    }
-
-    m->wand = NULL;
-    m->pool = NULL;
-
-    return APR_SUCCESS;
-}
-
 static apr_status_t magick_bucket_read(apr_bucket *b, const char **str,
                                        apr_size_t *len, apr_read_type_e block)
 {
     ap_bucket_magick *m = b->data;
-    const char *base = m->base;
 
     if (m->wand) {
-        m->base = base = (const char *)MagickWriteImageBlob(m->wand,
+        m->base = (char *)MagickWriteImageBlob(m->wand,
                 &b->length);
-        m->heap.alloc_len = b->length;
+        m->alloc_len = b->length;
+        DestroyMagickWand(m->wand);
         m->wand = NULL;
+
+        /* morph into a magick heap bucket from now on */
+        b->type = &ap_bucket_type_magick_heap;
     }
 
-    if (m->pool == NULL) {
-        /*
-         * pool has been cleaned up... masquerade as a heap bucket from now
-         * on. subsequent bucket operations will use the heap bucket code.
-         */
-        b->type = &apr_bucket_type_heap;
-        base = m->heap.base;
-    }
-    *str = base + b->start;
+    *str = m->base + b->start;
     *len = b->length;
     return APR_SUCCESS;
 }
@@ -194,33 +158,19 @@ static void magick_bucket_destroy(void *data)
 {
     ap_bucket_magick *m = data;
 
-    /* If the pool is cleaned up before the last reference goes
-     * away, the data is really now on the heap; heap_destroy() takes
-     * over.  free() in heap_destroy() thinks it's freeing
-     * an apr_bucket_heap, when in reality it's freeing the whole
-     * apr_bucket_magick for us.
-     */
-    if (m->pool) {
-        /* the shared resource is still in the pool
-         * because the pool has not been cleaned up yet
-         */
-        if (apr_bucket_shared_destroy(m)) {
+    if (apr_bucket_shared_destroy(m)) {
 
-            if (m->base) {
-                MagickRelinquishMemory((void *)m->base);
-            }
-
-            apr_pool_cleanup_kill(m->pool, m, magick_bucket_cleanup);
-            apr_bucket_free(m);
+        if (m->wand) {
+            DestroyMagickWand(m->wand);
+            m->wand = NULL;
         }
-    }
-    else {
-        /* the shared resource is no longer in the pool, it's
-         * on the heap, but this reference still thinks it's a pool
-         * bucket.  we should just go ahead and pass control to
-         * heap_destroy() for it since it doesn't know any better.
-         */
-        apr_bucket_type_heap.destroy(m);
+
+        if (m->base) {
+            MagickRelinquishMemory((void *)m->base);
+            m->base = NULL;
+        }
+
+        apr_bucket_free(m);
     }
 }
 
@@ -233,48 +183,43 @@ AP_DECLARE_DATA const apr_bucket_type_t ap_bucket_type_magick = {
     apr_bucket_shared_copy
 };
 
-AP_DECLARE(apr_bucket *) ap_bucket_magick_make(apr_bucket *b, MagickWand *wand,
-                                               apr_pool_t *p)
+AP_DECLARE_DATA const apr_bucket_type_t ap_bucket_type_magick_heap = {
+    "MAGICK_HEAP", 5, APR_BUCKET_DATA,
+    magick_bucket_destroy,
+    magick_bucket_read,
+    apr_bucket_setaside_noop, /* don't need to setaside thanks to the cleanup*/
+    apr_bucket_shared_split,
+    apr_bucket_shared_copy
+};
+
+AP_DECLARE(apr_bucket *) ap_bucket_magick_make(apr_bucket *b)
 {
     ap_bucket_magick *m;
 
     m = apr_bucket_alloc(sizeof(*m), b->list);
 
     m->base = NULL;
-    m->wand = wand;
-    m->pool = p;
-    m->list = b->list;
 
     b = apr_bucket_shared_make(b, m, 0, -1);
     b->type = &ap_bucket_type_magick;
 
     /* pre-initialize heap bucket member */
-    m->heap.alloc_len = 0;
-    m->heap.base      = NULL;
-    m->heap.free_func = apr_bucket_free;
+    m->alloc_len = 0;
+    m->base      = NULL;
 
-    apr_pool_cleanup_register(m->pool, m, magick_bucket_cleanup,
-                              apr_pool_cleanup_null);
+    m->wand = NewMagickWand();
+
     return b;
 }
 
-AP_DECLARE(apr_bucket *) ap_bucket_magick_create(apr_bucket_alloc_t *list,
-                                                 MagickWand *wand,
-                                                 apr_pool_t *p)
+AP_DECLARE(apr_bucket *) ap_bucket_magick_create(apr_bucket_alloc_t *list)
 {
     apr_bucket *b = apr_bucket_alloc(sizeof(*b), list);
 
     APR_BUCKET_INIT(b);
     b->free = apr_bucket_free;
     b->list = list;
-    return ap_bucket_magick_make(b, wand, p);
-}
-
-static apr_status_t magick_wand_cleanup(void *data)
-{
-    MagickWand *wand = data;
-    DestroyMagickWand(wand);
-    return APR_SUCCESS;
+    return ap_bucket_magick_make(b);
 }
 
 static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
@@ -351,19 +296,21 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     if (ctx->seen_eos) {
         const unsigned char *data;
         apr_bucket *e;
+        ap_bucket_magick *m;
+
+        /* insert wand bucket */
+        e = ap_bucket_magick_create(r->connection->bucket_alloc);
+        APR_BRIGADE_INSERT_HEAD(bb, e);
+
+        m = e->data;
 
         apr_brigade_pflatten(ctx->bb, (char **)&data, &size, r->pool);
 
-        ctx->wand = NewMagickWand();
-
-        apr_pool_cleanup_register(r->pool, (void *) ctx->wand, magick_wand_cleanup,
-                magick_wand_cleanup);
-
-        if (!MagickReadImageBlob(ctx->wand, data, size)) {
+        if (!MagickReadImageBlob(m->wand, data, size)) {
             char *description;
             ExceptionType severity;
 
-            description = MagickGetException(ctx->wand, &severity);
+            description = MagickGetException(m->wand, &severity);
             ap_log_rerror(APLOG_MARK, APLOG_ERR, APR_EGENERAL, r,
                     "MagickReadImageBlob: %s (severity %d)", description,
                     severity);
@@ -371,11 +318,6 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 
             return APR_EGENERAL;
         }
-
-        /* insert wand bucket */
-        e = ap_bucket_magick_create(r->connection->bucket_alloc, ctx->wand,
-                r->pool);
-        APR_BRIGADE_INSERT_HEAD(bb, e);
 
         /* pass what we have left down the chain */
         ap_remove_output_filter(f);
