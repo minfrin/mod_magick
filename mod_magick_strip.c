@@ -47,13 +47,6 @@ static apr_status_t magick_strip_out_filter(ap_filter_t *f, apr_bucket_brigade *
 {
     apr_bucket *e;
 
-    apr_status_t rv = APR_SUCCESS;
-
-    /* Do nothing if asked to filter nothing. */
-    if (APR_BRIGADE_EMPTY(bb)) {
-        return ap_pass_brigade(f->next, bb);
-    }
-
     for (e = APR_BRIGADE_FIRST(bb);
          e != APR_BRIGADE_SENTINEL(bb);
          e = APR_BUCKET_NEXT(e))
@@ -62,8 +55,7 @@ static apr_status_t magick_strip_out_filter(ap_filter_t *f, apr_bucket_brigade *
         /* EOS means we are done. */
         if (APR_BUCKET_IS_EOS(e)) {
             ap_remove_output_filter(f);
-            rv = ap_pass_brigade(f->next, bb);
-            continue;
+            break;
         }
 
         /* Magick bucket? */
@@ -88,7 +80,7 @@ static apr_status_t magick_strip_out_filter(ap_filter_t *f, apr_bucket_brigade *
 
     }
 
-    return rv;
+    return ap_pass_brigade(f->next, bb);
 }
 
 
