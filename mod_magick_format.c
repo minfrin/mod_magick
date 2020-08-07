@@ -40,6 +40,7 @@
 #include "http_log.h"
 #include "http_protocol.h"
 #include "ap_expr.h"
+#include "util_filter.h"
 
 #include "mod_magick.h"
 

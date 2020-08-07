@@ -39,6 +39,7 @@
 #include "http_config.h"
 #include "http_log.h"
 #include "ap_expr.h"
+#include "util_filter.h"
 
 #include "mod_magick.h"
 
@@ -161,7 +162,7 @@ static apr_status_t magick_interlace_out_filter(ap_filter_t *f, apr_bucket_briga
                 }
                 else {
                     interlace = magick_parse_interlace_type(str);
-                    if (interlace == UndefinedFilter) {
+                    if (interlace == UndefinedInterlace) {
                         ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
                                       "Interlace type for '%s' of '%s' not recognised, "
                                       "must be one of none|line|plane|partition"

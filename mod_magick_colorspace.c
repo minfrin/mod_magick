@@ -39,6 +39,7 @@
 #include "http_config.h"
 #include "http_log.h"
 #include "ap_expr.h"
+#include "util_filter.h"
 
 #include "mod_magick.h"
 
@@ -211,7 +212,7 @@ static apr_status_t magick_colorspace_out_filter(ap_filter_t *f, apr_bucket_brig
                 }
                 else {
                     colorspace = magick_parse_colorspace_type(str);
-                    if (colorspace == UndefinedFilter) {
+                    if (colorspace == UndefinedColorspace) {
                         ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
                                       "Colorspace type for '%s' of '%s' not recognised, "
                                       "must be one of cmyk|gray|hsl|hwb|ohta|rgb|srgb|transparent|xyz|ycbcr|ycc|yiq|ypbpr|yuv"

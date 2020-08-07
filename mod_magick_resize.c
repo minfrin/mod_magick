@@ -38,6 +38,7 @@
 #include "http_config.h"
 #include "http_log.h"
 #include "ap_expr.h"
+#include "util_filter.h"
 
 #include "mod_magick.h"
 
