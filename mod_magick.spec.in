@@ -8,7 +8,7 @@ License:   ASL 2.0
 Group:     System Environment/Daemons
 Source:    https://github.com/minfrin/%{name}/releases/download/%{name}-%{version}/%{name}-%{version}.tar.bz2
 Url:       https://github.com/minfrin/%{name}
-BuildRequires: gcc, pkgconfig(apr-1), pkgconfig(apr-util-1), pkgconfig(libical)
+BuildRequires: gcc, pkgconfig(apr-1), pkgconfig(apr-util-1), pkgconfig(GraphicsMagick)
 Requires:  httpd
 
 %if 0%{?is_opensuse}
@@ -30,6 +30,6 @@ The Apache mod_magick filter provides image filtering for requests.
 %make_install
 
 %files
-%{moduledir}/%{name}.so
+%{moduledir}/%{name}*.so
 
 
