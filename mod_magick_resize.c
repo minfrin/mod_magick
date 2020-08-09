@@ -22,14 +22,39 @@
  *
  * Basic configuration:
  *
- * <Location />
- *   <IfModule magick_resize_module>
- *     <If "%{QUERY_STRING} =~ /./">
- *       SetOutputFilter MAGICK_RESIZE
- *     </If>
- *   </IfModule>
- * </Location>
+ *   <Location />
+ *     <IfModule magick_resize_module>
+ *       <If "%{QUERY_STRING} =~ /./">
+ *         SetOutputFilter MAGICK_RESIZE
+ *       </If>
+ *     </IfModule>
+ *   </Location>
  *
+ * All resize directives take on a list of expressions, the first expression
+ * to return a valid value wins. This allows support for responsive behaviour
+ * such as HTTP Client Hints.
+ *
+ * For example, here we first take into account the HTTP Client Hint "Width"
+ * header, followed by the query string, followed by the default fallback value
+ * "100".
+ *
+ *   SetOutputFilter MAGICK;MAGICK_RESIZE
+ *   <If "%{req:Width} != ''">
+ *     MagickResizeColumns %{req:Width}
+ *   </If>
+ *   MagickResizeColumns %{QUERY_STRING} 100
+ *
+ * Note that in the above example, we need to include the If section to ensure
+ * the Vary header is has the Width header correctly added. Apache httpd 2.4
+ * has a bug where conditional expressions set the Vary header, but string
+ * expressions do not. Without this, caching breaks, and you want caching.
+ *
+ * In the absence of the above bug, the above line should look like this:
+ *
+ *   #MagickResizeColumns %{req:Width} %{QUERY_STRING} 100
+ *
+ * In the absence of a valid fallback value, or if the fallback value is zero,
+ * the original image value is maintained.
  */
 
 #include <apr_strings.h>
@@ -51,15 +76,20 @@ typedef struct magick_conf {
     int rows_set:1; /* have the rows been set */
     int filter_type_set:1; /* has the filter been set */
     int blur_set:1; /* has the blur been set */
-    ap_expr_info_t *columns;  /* resize to columns */
-    ap_expr_info_t *rows; /* resize to rows */
-    ap_expr_info_t *filter_type; /* resize filter type */
-    ap_expr_info_t *blur; /* resize blur */
+    apr_array_header_t *columns;  /* resize to columns */
+    apr_array_header_t *rows; /* resize to rows */
+    apr_array_header_t *filter_type; /* resize filter type */
+    apr_array_header_t *blur; /* resize blur */
 } magick_conf;
 
 static void *create_magick_dir_config(apr_pool_t *p, char *dummy)
 {
     magick_conf *new = (magick_conf *) apr_pcalloc(p, sizeof(magick_conf));
+
+    new->columns = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
+    new->rows = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
+    new->filter_type = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
+    new->blur = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
 
     return (void *) new;
 }
@@ -70,17 +100,10 @@ static void *merge_magick_dir_config(apr_pool_t *p, void *basev, void *addv)
     magick_conf *add = (magick_conf *) addv;
     magick_conf *base = (magick_conf *) basev;
 
-    new->rows = (add->rows_set == 0) ? base->rows : add->rows;
-    new->rows_set = add->rows_set || base->rows_set;
-
-    new->columns = (add->columns_set == 0) ? base->columns : add->columns;
-    new->columns_set = add->columns_set || base->columns_set;
-
-    new->filter_type = (add->filter_type_set == 0) ? base->filter_type : add->filter_type;
-    new->filter_type_set = add->filter_type_set || base->filter_type_set;
-
-    new->blur = (add->blur_set == 0) ? base->blur : add->blur;
-    new->blur_set = add->blur_set || base->blur_set;
+    new->rows = apr_array_append(p, add->rows, base->rows);
+    new->columns = apr_array_append(p, add->columns, base->columns);
+    new->filter_type = apr_array_append(p, add->filter_type, base->filter_type);
+    new->blur = apr_array_append(p, add->blur, base->blur);
 
     return new;
 }
@@ -90,7 +113,9 @@ static const char *set_magick_columns(cmd_parms *cmd, void *dconf, const char *a
     magick_conf *conf = dconf;
     const char *expr_err = NULL;
 
-    conf->columns = ap_expr_parse_cmd(cmd, arg, AP_EXPR_FLAG_STRING_RESULT,
+    ap_expr_info_t **columns = apr_array_push(conf->columns);
+
+    *columns = ap_expr_parse_cmd(cmd, arg, AP_EXPR_FLAG_STRING_RESULT,
             &expr_err, NULL);
 
     if (expr_err) {
@@ -98,8 +123,6 @@ static const char *set_magick_columns(cmd_parms *cmd, void *dconf, const char *a
                 "Cannot parse expression '", arg, "': ",
                 expr_err, NULL);
     }
-
-    conf->columns_set = 1;
 
     return NULL;
 }
@@ -109,7 +132,9 @@ static const char *set_magick_rows(cmd_parms *cmd, void *dconf, const char *arg)
     magick_conf *conf = dconf;
     const char *expr_err = NULL;
 
-    conf->rows = ap_expr_parse_cmd(cmd, arg, AP_EXPR_FLAG_STRING_RESULT,
+    ap_expr_info_t **rows = apr_array_push(conf->rows);
+
+    *rows = ap_expr_parse_cmd(cmd, arg, AP_EXPR_FLAG_STRING_RESULT,
             &expr_err, NULL);
 
     if (expr_err) {
@@ -117,8 +142,6 @@ static const char *set_magick_rows(cmd_parms *cmd, void *dconf, const char *arg)
                 "Cannot parse expression '", arg, "': ",
                 expr_err, NULL);
     }
-
-    conf->rows_set = 1;
 
     return NULL;
 }
@@ -128,7 +151,9 @@ static const char *set_magick_filter_type(cmd_parms *cmd, void *dconf, const cha
     magick_conf *conf = dconf;
     const char *expr_err = NULL;
 
-    conf->filter_type = ap_expr_parse_cmd(cmd, arg, AP_EXPR_FLAG_STRING_RESULT,
+    ap_expr_info_t **filter_type = apr_array_push(conf->filter_type);
+
+    *filter_type = ap_expr_parse_cmd(cmd, arg, AP_EXPR_FLAG_STRING_RESULT,
             &expr_err, NULL);
 
     if (expr_err) {
@@ -136,8 +161,6 @@ static const char *set_magick_filter_type(cmd_parms *cmd, void *dconf, const cha
                 "Cannot parse expression '", arg, "': ",
                 expr_err, NULL);
     }
-
-    conf->filter_type_set = 1;
 
     return NULL;
 }
@@ -147,7 +170,9 @@ static const char *set_magick_blur(cmd_parms *cmd, void *dconf, const char *arg)
     magick_conf *conf = dconf;
     const char *expr_err = NULL;
 
-    conf->blur = ap_expr_parse_cmd(cmd, arg, AP_EXPR_FLAG_STRING_RESULT,
+    ap_expr_info_t **blur = apr_array_push(conf->blur);
+
+    *blur = ap_expr_parse_cmd(cmd, arg, AP_EXPR_FLAG_STRING_RESULT,
             &expr_err, NULL);
 
     if (expr_err) {
@@ -156,21 +181,19 @@ static const char *set_magick_blur(cmd_parms *cmd, void *dconf, const char *arg)
                 expr_err, NULL);
     }
 
-    conf->blur_set = 1;
-
     return NULL;
 }
 
 static const command_rec magick_cmds[] = {
-    AP_INIT_TAKE1("MagickResizeColumns", set_magick_columns, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeColumns", set_magick_columns, NULL, ACCESS_CONF,
         "Set the number of columns in the resized image"),
-    AP_INIT_TAKE1("MagickResizeRows", set_magick_rows, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeRows", set_magick_rows, NULL, ACCESS_CONF,
         "Set the number of rows in the resized image"),
-    AP_INIT_TAKE1("MagickResizeFilterType", set_magick_filter_type, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeFilterType", set_magick_filter_type, NULL, ACCESS_CONF,
         "Set the filter type used to resize the image. Must be one of bessel|blackman|box|catrom|"
         "cubic|gaussian|hamming|hanning|hermite|lanczos|mitchell|point|"
         "quadratic|sinc|triangle"),
-    AP_INIT_TAKE1("MagickResizeBlur", set_magick_blur, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeBlur", set_magick_blur, NULL, ACCESS_CONF,
         "Set the blur used to resize the image"), { NULL },
 };
 
@@ -288,80 +311,144 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
 
             if (conf->columns) {
                 const char *err = NULL, *str;
+                int i;
 
-                str = ap_expr_str_exec(f->r, conf->columns, &err);
-                if (err) {
-                    ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
-                                    "Failure while evaluating the columns expression for '%s', "
-                                    "columns ignored: %s", f->r->uri, err);
-                }
-                else {
-                    columns = apr_atoi64(str);
-                    if (errno == ERANGE) {
-                        ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
-                                      "Columns expression for '%s' out of range, "
-                                      "columns ignored: %s", f->r->uri, str);
+                for (i = 0; i < conf->columns->nelts; ++i) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->columns, i,
+                            ap_expr_info_t *);
+
+                    str = ap_expr_str_exec(f->r, expr, &err);
+                    if (err) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Failure while evaluating the columns expression for '%s', "
+                                        "column value skipped: %s", f->r->uri,
+                                err);
+                        continue;
+                    } else if (!str || !str[strspn(str, " \t\r\n")]) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Columns expression for '%s' empty, "
+                                        "row value skipped", f->r->uri);
+                        continue;
+                    } else {
+                        columns = apr_atoi64(str);
+                        if (errno == ERANGE) {
+                            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                    "Columns expression for '%s' out of range, "
+                                            "columns ignored: %s", f->r->uri,
+                                    str);
+                            columns = 0;
+                            continue;
+                        }
                     }
+                    break;
                 }
             }
 
             if (conf->rows) {
                 const char *err = NULL, *str;
+                int i;
 
-                str = ap_expr_str_exec(f->r, conf->rows, &err);
-                if (err) {
-                    ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
-                                    "Failure while evaluating the rows expression for '%s', "
-                                    "rows ignored: %s", f->r->uri, err);
-                }
-                else {
-                    rows = apr_atoi64(str);
-                    if (errno == ERANGE) {
-                        ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
-                                      "Rows expression for '%s' out of range, "
-                                      "rows ignored: %s", f->r->uri, str);
+                for (i = 0; i < conf->rows->nelts; ++i) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->rows, i,
+                            ap_expr_info_t *);
+
+                    str = ap_expr_str_exec(f->r, expr, &err);
+                    if (err) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Failure while evaluating the rows expression for '%s', "
+                                        "row value skipped: %s", f->r->uri,
+                                err);
+                        continue;
+                    } else if (!str || !str[strspn(str, " \t\r\n")]) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Rows expression for '%s' empty, "
+                                        "row value skipped", f->r->uri);
+                        continue;
+                    } else {
+                        rows = apr_atoi64(str);
+                        if (errno == ERANGE) {
+                            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                    "Rows expression for '%s' out of range, "
+                                            "rows ignored: %s", f->r->uri,
+                                    str);
+                            rows = 0;
+                            continue;
+                        }
                     }
+                    break;
                 }
             }
 
             if (conf->filter_type) {
                 const char *err = NULL, *str;
+                int i;
 
-                str = ap_expr_str_exec(f->r, conf->filter_type, &err);
-                if (err) {
-                    ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
-                                    "Failure while evaluating the filter type expression for '%s', "
-                                    "filter type ignored: %s", f->r->uri, err);
-                }
-                else {
-                    filter_type = magick_parse_filter_type(str);
-                    if (filter_type == UndefinedFilter) {
-                        ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
-                                      "Filter type for '%s' of '%s' not recognised, "
-                                      "must be one of bessel|blackman|box|catrom|"
-                                      "cubic|gaussian|hamming|hanning|hermite|lanczos|mitchell|point|"
-                                      "quadratic|sinc|triangle, using 'cubic'", f->r->uri, str);
+                for (i = 0; i < conf->filter_type->nelts; ++i) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->filter_type, i,
+                            ap_expr_info_t *);
+
+                    str = ap_expr_str_exec(f->r, expr, &err);
+                    if (err) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Failure while evaluating the filtertype expression for '%s', "
+                                        "filtertype value skipped: %s",
+                                f->r->uri, err);
+                        continue;
+                    } else if (!str || !str[strspn(str, " \t\r\n")]) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Filtertype expression for '%s' empty, "
+                                        "filtertype value skipped", f->r->uri);
+                        continue;
+                    } else {
+                        filter_type = magick_parse_filter_type(str);
+                        if (filter_type == UndefinedFilter) {
+                            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                    "Filter type for '%s' of '%s' not recognised, "
+                                            "must be one of bessel|blackman|box|catrom|"
+                                            "cubic|gaussian|hamming|hanning|hermite|lanczos|mitchell|point|"
+                                            "quadratic|sinc|triangle, using 'cubic'",
+                                    f->r->uri, str);
+                            filter_type = DEFAULT_FILTER_TYPE;
+                            continue;
+                        }
                     }
+                    break;
                 }
             }
 
             if (conf->blur) {
                 const char *err = NULL, *str;
                 char *end;
+                int i;
 
-                str = ap_expr_str_exec(f->r, conf->blur, &err);
-                if (err) {
-                    ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
-                                    "Failure while evaluating the blur expression for '%s', "
-                                    "blur ignored: %s", f->r->uri, err);
-                }
-                else {
-                    blur = strtod(str, &end);
-                    if (errno == ERANGE) {
-                        ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, f->r,
-                                      "Blur expression for '%s' out of range, "
-                                      "blur ignored: %s", f->r->uri, str);
+                for (i = 0; i < conf->blur->nelts; ++i) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->blur, i,
+                            ap_expr_info_t *);
+
+                    str = ap_expr_str_exec(f->r, expr, &err);
+                    if (err) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Failure while evaluating the blur expression for '%s', "
+                                        "blur value skipped: %s", f->r->uri,
+                                err);
+                        continue;
+                    } else if (!str || !str[strspn(str, " \t\r\n")]) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Blur expression for '%s' empty, "
+                                        "blur value skipped", f->r->uri);
+                        continue;
+                    } else {
+                        blur = strtod(str, &end);
+                        if (errno == ERANGE) {
+                            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                    "Blur expression for '%s' out of range, "
+                                            "blur ignored: %s", f->r->uri,
+                                    str);
+                            blur = 1;
+                            continue;
+                        }
                     }
+                    break;
                 }
             }
 
