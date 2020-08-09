@@ -91,7 +91,7 @@ static const char *set_magick_interlace(cmd_parms *cmd, void *dconf, const char 
 }
 
 static const command_rec magick_cmds[] = {
-    AP_INIT_TAKE1("MagickInterlace", set_magick_interlace, NULL, ACCESS_CONF,
+    AP_INIT_TAKE1("MagickInterlace", set_magick_interlace, NULL, ACCESS_CONF | OR_ALL,
         "Set the interlace type used to render the image. Must be one of none|line|plane|partition"
         ), { NULL },
 };

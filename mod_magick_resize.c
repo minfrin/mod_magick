@@ -234,19 +234,19 @@ static const char *set_magick_modulus(cmd_parms *cmd, void *dconf, const char *a
 }
 
 static const command_rec magick_cmds[] = {
-    AP_INIT_ITERATE("MagickResizeColumns", set_magick_columns, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeColumns", set_magick_columns, NULL, ACCESS_CONF | OR_ALL,
         "Set the number of columns in the resized image"),
-    AP_INIT_ITERATE("MagickResizeRows", set_magick_rows, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeRows", set_magick_rows, NULL, ACCESS_CONF | OR_ALL,
         "Set the number of rows in the resized image"),
-    AP_INIT_ITERATE("MagickResizeFilterType", set_magick_filter_type, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeFilterType", set_magick_filter_type, NULL, ACCESS_CONF | OR_ALL,
         "Set the filter type used to resize the image. Must be one of bessel|blackman|box|catrom|"
         "cubic|gaussian|hamming|hanning|hermite|lanczos|mitchell|point|"
         "quadratic|sinc|triangle"),
-    AP_INIT_ITERATE("MagickResizeBlur", set_magick_blur, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeBlur", set_magick_blur, NULL, ACCESS_CONF | OR_ALL,
         "Set the blur used to resize the image"),
-    AP_INIT_ITERATE("MagickResizeFactor", set_magick_factor, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeFactor", set_magick_factor, NULL, ACCESS_CONF | OR_ALL,
         "Set the factor to multiply rows and columns by, such as the Device Pixel Ratio (DPR)"),
-    AP_INIT_ITERATE("MagickResizeModulus", set_magick_modulus, NULL, ACCESS_CONF,
+    AP_INIT_ITERATE("MagickResizeModulus", set_magick_modulus, NULL, ACCESS_CONF | OR_ALL,
         "Set the modulus to apply to the width and height."),
     { NULL },
 };

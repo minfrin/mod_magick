@@ -90,7 +90,7 @@ static const char *set_magick_format(cmd_parms *cmd, void *dconf, const char *ar
 }
 
 static const command_rec magick_cmds[] = {
-    AP_INIT_TAKE1("MagickFormat", set_magick_format, NULL, ACCESS_CONF,
+    AP_INIT_TAKE1("MagickFormat", set_magick_format, NULL, ACCESS_CONF | OR_ALL,
         "Set the format of the output image"), { NULL },
 };
 

@@ -90,7 +90,7 @@ static const char *set_magick_quality(cmd_parms *cmd, void *dconf, const char *a
 }
 
 static const command_rec magick_cmds[] = {
-    AP_INIT_TAKE1("MagickQuality", set_magick_quality, NULL, ACCESS_CONF,
+    AP_INIT_TAKE1("MagickQuality", set_magick_quality, NULL, ACCESS_CONF | OR_ALL,
         "Set the compression quality of the output image"), { NULL },
 };
 
