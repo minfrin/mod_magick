@@ -64,6 +64,8 @@
  *     MagickResizeFactor %{req:DPR} 1
  *   </If>
  *
+ * The MagickResizeModulus limits the possible image sizes so that caches are
+ * not overwhelmed.
  */
 
 #include <apr_strings.h>
@@ -81,15 +83,13 @@ module AP_MODULE_DECLARE_DATA magick_resize_module;
 #define DEFAULT_FILTER_TYPE CubicFilter
 
 typedef struct magick_conf {
-    int columns_set:1; /* have the columns been set */
-    int rows_set:1; /* have the rows been set */
-    int filter_type_set:1; /* has the filter been set */
-    int blur_set:1; /* has the blur been set */
+    int modulus_set:1; /* has the modulus been set */
     apr_array_header_t *columns;  /* resize to columns */
     apr_array_header_t *rows; /* resize to rows */
     apr_array_header_t *filter_type; /* resize filter type */
     apr_array_header_t *blur; /* resize blur */
     apr_array_header_t *factor; /* resize scaling factor */
+    apr_off_t modulus; /* the modulus to set */
 } magick_conf;
 
 static void *create_magick_dir_config(apr_pool_t *p, char *dummy)
@@ -101,6 +101,7 @@ static void *create_magick_dir_config(apr_pool_t *p, char *dummy)
     new->filter_type = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
     new->blur = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
     new->factor = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
+    new->modulus = 1;
 
     return (void *) new;
 }
@@ -116,6 +117,9 @@ static void *merge_magick_dir_config(apr_pool_t *p, void *basev, void *addv)
     new->filter_type = apr_array_append(p, add->filter_type, base->filter_type);
     new->blur = apr_array_append(p, add->blur, base->blur);
     new->factor = apr_array_append(p, add->factor, base->factor);
+
+    new->modulus = (add->modulus_set == 0) ? base->modulus : add->modulus;
+    new->modulus_set = add->modulus_set || base->modulus_set;
 
     return new;
 }
@@ -215,6 +219,20 @@ static const char *set_magick_factor(cmd_parms *cmd, void *dconf, const char *ar
     return NULL;
 }
 
+static const char *set_magick_modulus(cmd_parms *cmd, void *dconf, const char *arg)
+{
+    magick_conf *conf = dconf;
+
+    if (APR_SUCCESS != apr_strtoff(&(conf->modulus), arg, NULL, 10) || conf->modulus
+            <= 0) {
+        return "MagickResizeModulus must be greater than zero";
+    }
+
+    conf->modulus_set = 1;
+
+    return NULL;
+}
+
 static const command_rec magick_cmds[] = {
     AP_INIT_ITERATE("MagickResizeColumns", set_magick_columns, NULL, ACCESS_CONF,
         "Set the number of columns in the resized image"),
@@ -228,6 +246,8 @@ static const command_rec magick_cmds[] = {
         "Set the blur used to resize the image"),
     AP_INIT_ITERATE("MagickResizeFactor", set_magick_factor, NULL, ACCESS_CONF,
         "Set the factor to multiply rows and columns by, such as the Device Pixel Ratio (DPR)"),
+    AP_INIT_ITERATE("MagickResizeModulus", set_magick_modulus, NULL, ACCESS_CONF,
+        "Set the modulus to apply to the width and height."),
     { NULL },
 };
 
@@ -525,6 +545,14 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
 
             rows *= factor;
             columns *= factor;
+
+            if (rows % conf->modulus) {
+                rows = ((unsigned long)(rows / conf->modulus) + 1) * conf->modulus;
+            }
+
+            if (columns % conf->modulus) {
+                columns = ((unsigned long)(columns / conf->modulus) + 1) * conf->modulus;
+            }
 
             if (columns == 0 && rows == 0) {
                 /* no resize requested, do nothing */
