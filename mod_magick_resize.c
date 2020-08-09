@@ -30,7 +30,7 @@
  *     </IfModule>
  *   </Location>
  *
- * All resize directives take on a list of expressions, the first expression
+ * All resize directives take on a list of expressions, the last expression
  * to return a valid value wins. This allows support for responsive behaviour
  * such as HTTP Client Hints.
  *
@@ -39,10 +39,10 @@
  * "100".
  *
  *   SetOutputFilter MAGICK;MAGICK_RESIZE
+ *   MagickResizeColumns 100 %{QUERY_STRING}
  *   <If "%{req:Width} != ''">
  *     MagickResizeColumns %{req:Width}
  *   </If>
- *   MagickResizeColumns %{QUERY_STRING} 100
  *
  * Note that in the above example, we need to include the If section to ensure
  * the Vary header is has the Width header correctly added. Apache httpd 2.4
@@ -51,21 +51,26 @@
  *
  * In the absence of the above bug, the above line should look like this:
  *
- *   #MagickResizeColumns %{req:Width} %{QUERY_STRING} 100
+ *   #MagickResizeColumns 100 %{QUERY_STRING} %{req:Width}
  *
  * In the absence of a valid fallback value, or if the fallback value is zero,
  * the original image value is maintained.
  *
  * The MagickResizeFactor can be used to apply a multiplier to the width and
- * height. For example, to use the HTTP Client Hint DPR header:
+ * height. For example, to use the HTTP Client Hint Save-Data header, falling
+ * back to the DPR header, falling back to the default factor of 1:
  *
  *   SetOutputFilter MAGICK;MAGICK_RESIZE
  *   <If "%{req:DPR} != ''">
- *     MagickResizeFactor %{req:DPR} 1
+ *     MagickResizeFactor %{req:DPR}
+ *   </If>
+ *   <If "%{req:Save-Data} = 'on'">
+ *     MagickResizeFactor 0.5
  *   </If>
  *
  * The MagickResizeModulus limits the possible image sizes so that caches are
- * not overwhelmed.
+ * not overwhelmed. All requested rows and columns are rounded up to the nearest
+ * modulus value, maintaining the given aspect ratio.
  */
 
 #include <apr_strings.h>
@@ -112,11 +117,11 @@ static void *merge_magick_dir_config(apr_pool_t *p, void *basev, void *addv)
     magick_conf *add = (magick_conf *) addv;
     magick_conf *base = (magick_conf *) basev;
 
-    new->rows = apr_array_append(p, add->rows, base->rows);
-    new->columns = apr_array_append(p, add->columns, base->columns);
-    new->filter_type = apr_array_append(p, add->filter_type, base->filter_type);
-    new->blur = apr_array_append(p, add->blur, base->blur);
-    new->factor = apr_array_append(p, add->factor, base->factor);
+    new->rows = apr_array_append(p, base->rows, add->rows);
+    new->columns = apr_array_append(p, base->columns, add->columns);
+    new->filter_type = apr_array_append(p, base->filter_type, add->filter_type);
+    new->blur = apr_array_append(p, base->blur, add->blur);
+    new->factor = apr_array_append(p, base->factor, add->factor);
 
     new->modulus = (add->modulus_set == 0) ? base->modulus : add->modulus;
     new->modulus_set = add->modulus_set || base->modulus_set;
@@ -246,7 +251,7 @@ static const command_rec magick_cmds[] = {
         "Set the blur used to resize the image"),
     AP_INIT_ITERATE("MagickResizeFactor", set_magick_factor, NULL, ACCESS_CONF | OR_ALL,
         "Set the factor to multiply rows and columns by, such as the Device Pixel Ratio (DPR)"),
-    AP_INIT_ITERATE("MagickResizeModulus", set_magick_modulus, NULL, ACCESS_CONF | OR_ALL,
+    AP_INIT_TAKE1("MagickResizeModulus", set_magick_modulus, NULL, ACCESS_CONF | OR_ALL,
         "Set the modulus to apply to the width and height."),
     { NULL },
 };
@@ -368,8 +373,8 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
                 const char *err = NULL, *str;
                 int i;
 
-                for (i = 0; i < conf->columns->nelts; ++i) {
-                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->columns, i,
+                for (i = conf->columns->nelts; i > 0;) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->columns, --i,
                             ap_expr_info_t *);
 
                     str = ap_expr_str_exec(f->r, expr, &err);
@@ -403,8 +408,8 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
                 const char *err = NULL, *str;
                 int i;
 
-                for (i = 0; i < conf->rows->nelts; ++i) {
-                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->rows, i,
+                for (i = conf->rows->nelts; i > 0;) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->rows, --i,
                             ap_expr_info_t *);
 
                     str = ap_expr_str_exec(f->r, expr, &err);
@@ -438,8 +443,8 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
                 const char *err = NULL, *str;
                 int i;
 
-                for (i = 0; i < conf->filter_type->nelts; ++i) {
-                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->filter_type, i,
+                for (i = conf->filter_type->nelts; i > 0;) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->filter_type, --i,
                             ap_expr_info_t *);
 
                     str = ap_expr_str_exec(f->r, expr, &err);
@@ -476,8 +481,8 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
                 char *end;
                 int i;
 
-                for (i = 0; i < conf->blur->nelts; ++i) {
-                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->blur, i,
+                for (i = conf->blur->nelts; i > 0;) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->blur, --i,
                             ap_expr_info_t *);
 
                     str = ap_expr_str_exec(f->r, expr, &err);
@@ -512,8 +517,8 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
                 char *end;
                 int i;
 
-                for (i = 0; i < conf->factor->nelts; ++i) {
-                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->factor, i,
+                for (i = conf->factor->nelts; i > 0;) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->factor, --i,
                             ap_expr_info_t *);
 
                     str = ap_expr_str_exec(f->r, expr, &err);
@@ -570,10 +575,10 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
             }
 
             if (columns > MagickGetImageWidth(m->wand)) {
-            	columns = MagickGetImageWidth(m->wand);
+                columns = MagickGetImageWidth(m->wand);
             }
             if (rows > MagickGetImageHeight(m->wand)) {
-            	rows = MagickGetImageHeight(m->wand);
+                rows = MagickGetImageHeight(m->wand);
             }
 
             if (!MagickResizeImage(m->wand, columns, rows,
