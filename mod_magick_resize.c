@@ -55,6 +55,15 @@
  *
  * In the absence of a valid fallback value, or if the fallback value is zero,
  * the original image value is maintained.
+ *
+ * The MagickResizeFactor can be used to apply a multiplier to the width and
+ * height. For example, to use the HTTP Client Hint DPR header:
+ *
+ *   SetOutputFilter MAGICK;MAGICK_RESIZE
+ *   <If "%{req:DPR} != ''">
+ *     MagickResizeFactor %{req:DPR} 1
+ *   </If>
+ *
  */
 
 #include <apr_strings.h>
@@ -80,6 +89,7 @@ typedef struct magick_conf {
     apr_array_header_t *rows; /* resize to rows */
     apr_array_header_t *filter_type; /* resize filter type */
     apr_array_header_t *blur; /* resize blur */
+    apr_array_header_t *factor; /* resize scaling factor */
 } magick_conf;
 
 static void *create_magick_dir_config(apr_pool_t *p, char *dummy)
@@ -90,6 +100,7 @@ static void *create_magick_dir_config(apr_pool_t *p, char *dummy)
     new->rows = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
     new->filter_type = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
     new->blur = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
+    new->factor = apr_array_make(p, 2, sizeof(ap_expr_info_t *));
 
     return (void *) new;
 }
@@ -104,6 +115,7 @@ static void *merge_magick_dir_config(apr_pool_t *p, void *basev, void *addv)
     new->columns = apr_array_append(p, add->columns, base->columns);
     new->filter_type = apr_array_append(p, add->filter_type, base->filter_type);
     new->blur = apr_array_append(p, add->blur, base->blur);
+    new->factor = apr_array_append(p, add->factor, base->factor);
 
     return new;
 }
@@ -184,6 +196,25 @@ static const char *set_magick_blur(cmd_parms *cmd, void *dconf, const char *arg)
     return NULL;
 }
 
+static const char *set_magick_factor(cmd_parms *cmd, void *dconf, const char *arg)
+{
+    magick_conf *conf = dconf;
+    const char *expr_err = NULL;
+
+    ap_expr_info_t **factor = apr_array_push(conf->factor);
+
+    *factor = ap_expr_parse_cmd(cmd, arg, AP_EXPR_FLAG_STRING_RESULT,
+            &expr_err, NULL);
+
+    if (expr_err) {
+        return apr_pstrcat(cmd->temp_pool,
+                "Cannot parse expression '", arg, "': ",
+                expr_err, NULL);
+    }
+
+    return NULL;
+}
+
 static const command_rec magick_cmds[] = {
     AP_INIT_ITERATE("MagickResizeColumns", set_magick_columns, NULL, ACCESS_CONF,
         "Set the number of columns in the resized image"),
@@ -194,7 +225,10 @@ static const command_rec magick_cmds[] = {
         "cubic|gaussian|hamming|hanning|hermite|lanczos|mitchell|point|"
         "quadratic|sinc|triangle"),
     AP_INIT_ITERATE("MagickResizeBlur", set_magick_blur, NULL, ACCESS_CONF,
-        "Set the blur used to resize the image"), { NULL },
+        "Set the blur used to resize the image"),
+    AP_INIT_ITERATE("MagickResizeFactor", set_magick_factor, NULL, ACCESS_CONF,
+        "Set the factor to multiply rows and columns by, such as the Device Pixel Ratio (DPR)"),
+    { NULL },
 };
 
 static FilterTypes magick_parse_filter_type(const char *filter_type)
@@ -308,6 +342,7 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
             unsigned long rows = 0;
             FilterTypes filter_type = DEFAULT_FILTER_TYPE;
             double blur = 1;
+            double factor = 1;
 
             if (conf->columns) {
                 const char *err = NULL, *str;
@@ -451,6 +486,45 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
                     break;
                 }
             }
+
+            if (conf->factor) {
+                const char *err = NULL, *str;
+                char *end;
+                int i;
+
+                for (i = 0; i < conf->factor->nelts; ++i) {
+                    ap_expr_info_t *expr = APR_ARRAY_IDX(conf->factor, i,
+                            ap_expr_info_t *);
+
+                    str = ap_expr_str_exec(f->r, expr, &err);
+                    if (err) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Failure while evaluating the factor expression for '%s', "
+                                        "factor value skipped: %s", f->r->uri,
+                                err);
+                        continue;
+                    } else if (!str || !str[strspn(str, " \t\r\n")]) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                "Factor expression for '%s' empty, "
+                                        "factor value skipped", f->r->uri);
+                        continue;
+                    } else {
+                        factor = strtod(str, &end);
+                        if (errno == ERANGE) {
+                            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, f->r,
+                                    "Factor expression for '%s' out of range, "
+                                            "factor ignored: %s", f->r->uri,
+                                    str);
+                            factor = 1;
+                            continue;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            rows *= factor;
+            columns *= factor;
 
             if (columns == 0 && rows == 0) {
                 /* no resize requested, do nothing */
