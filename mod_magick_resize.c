@@ -568,6 +568,14 @@ static apr_status_t magick_resize_out_filter(ap_filter_t *f, apr_bucket_brigade 
                         * MagickGetImageHeight(m->wand))) / MagickGetImageWidth(
                                 m->wand);
             }
+
+            if (columns > MagickGetImageWidth(m->wand)) {
+            	columns = MagickGetImageWidth(m->wand);
+            }
+            if (rows > MagickGetImageHeight(m->wand)) {
+            	rows = MagickGetImageHeight(m->wand);
+            }
+
             if (!MagickResizeImage(m->wand, columns, rows,
                     filter_type, blur)) {
                 char *description;
