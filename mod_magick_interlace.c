@@ -23,14 +23,14 @@
  * Basic configuration:
  *
  * <Location />
- *   <IfModule magick_interlace_module>
- *     <If "%{QUERY_STRING} =~ /./">
- *       SetOutputFilter MAGICK_INTERLACE
- *       MagickInterlace plane
- *     </If>
- *   </IfModule>
+ *   <If "%{QUERY_STRING} =~ /./">
+ *     SetOutputFilter MAGICK;MAGICK_INTERLACE
+ *     MagickInterlace plane
+ *   </If>
  * </Location>
  *
+ * The MagickInterlace directive takes an expression containing the interlace
+ * type to be used. Possible options are: none|line|plane|partition
  */
 
 #include <apr_strings.h>
