@@ -23,14 +23,15 @@
  * Basic configuration:
  *
  * <Location />
- *   <IfModule magick_format_module>
- *     <If "%{QUERY_STRING} =~ /./">
- *       SetOutputFilter MAGICK_FORMAT
- *       MagickFormat PNG
- *     </If>
- *   </IfModule>
+ *   <If "%{QUERY_STRING} =~ /./">
+ *     SetOutputFilter MAGICK_FORMAT
+ *     MagickFormat PNG
+ *   </If>
  * </Location>
  *
+ * The MagickFormat directive sets the output format to be used. The list
+ * of supported formats can be found in the manual of the GraphicsMagick
+ * 'gm' command.
  */
 
 #include <apr_strings.h>
