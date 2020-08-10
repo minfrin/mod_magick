@@ -23,14 +23,20 @@
  * Basic configuration:
  *
  * <Location />
- *   <IfModule magick_colorspace_module>
- *     <If "%{QUERY_STRING} =~ /./">
- *       SetOutputFilter MAGICK_COLORSPACE
- *       MagickColorspace srgb
- *     </If>
- *   </IfModule>
+ *   <If "%{QUERY_STRING} =~ /./">
+ *     SetOutputFilter MAGICK_COLORSPACE
+ *     MagickColorspace srgb
+ *   </If>
  * </Location>
  *
+ * The MagickColorspace directive sets the colorspace to be used by the
+ * output image.
+ *
+ * Possible values are:
+ *
+ * cmyk|gray|hsl|hwb|ohta|rgb|srgb|transparent|xyz|ycbcr|ycc|yiq|ypbpr|yuv
+ *
+ * The default value is srgb.
  */
 
 #include <apr_strings.h>
