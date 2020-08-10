@@ -3,6 +3,12 @@
 The Apache mod\_magick module provides image filtering for the Apache
 httpd server.
 
+- Download:
+
+RPM Packages are available at
+[COPR](https://copr.fedorainfracloud.org/coprs/minfrin/mod_magick/) for EPEL,
+Fedora and OpenSUSE.
+
 - Basic configuration:
 
 ```
