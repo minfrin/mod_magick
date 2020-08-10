@@ -9,6 +9,11 @@ RPM Packages are available at
 [COPR](https://copr.fedorainfracloud.org/coprs/minfrin/mod_magick/) for EPEL,
 Fedora and OpenSUSE.
 
+```
+dnf copr enable minfrin/mod_magick
+dnf install mod_magick
+```
+
 - Basic configuration:
 
 ```
