@@ -27,10 +27,23 @@
  *   <IfModule magick_module>
  *     <If "%{QUERY_STRING} =~ /./">
  *       SetOutputFilter MAGICK
+ *       AddMagickOption jpeg:preserve-settings true
  *     </If>
  *   </IfModule>
  * </Location>
  *
+ * The MAGICK module converts a response into a magick bucket, which can be
+ * transformed by specific downstream magick filters to modify the image.
+ * The first filter that attempts to read the bucket will cause the output
+ * image to be rendered.
+ *
+ * The AddMagickOption allows the setting of options that affect the
+ * operation of GraphicsMagick. The options accepted are those as documented
+ * under the -define option in the gm tool.
+ *
+ * The MagickMaxSize option sets the largest size the source image is allowed to
+ * be. Beyond this size requests will be rejected to prevent the processing of
+ * huge images.
  */
 
 #include <apr.h>
@@ -41,6 +54,7 @@
 #include "http_config.h"
 #include "http_log.h"
 #include "util_filter.h"
+#include "ap_expr.h"
 
 #include "mod_magick.h"
 
@@ -54,7 +68,19 @@ typedef struct magick_conf {
     apr_off_t size; /* maximum image size */
     const char *recipe; /* default recipe (if any) */
     apr_hash_t *recipes; /* recipes by name */
+    apr_hash_t *options; /* options */
 } magick_conf;
+
+typedef struct magick_option {
+    const char *format;  /* set to format */
+    const char *key;  /* set to key */
+    ap_expr_info_t *value;  /* set to value */
+} magick_option;
+
+typedef struct magick_do {
+    request_rec *r;
+    MagickWand *wand;
+} magick_do;
 
 typedef struct magick_ctx {
     apr_bucket_brigade *bb;
@@ -71,6 +97,7 @@ static void *create_magick_dir_config(apr_pool_t *p, char *dummy)
 
     new->size = DEFAULT_MAX_SIZE;
     new->recipes = apr_hash_make(p);
+    new->options = apr_hash_make(p);
 
     return (void *) new;
 }
@@ -88,6 +115,8 @@ static void *merge_magick_dir_config(apr_pool_t *p, void *basev, void *addv)
     new->recipe_set = add->recipe_set || base->recipe_set;
 
     new->recipes = apr_hash_overlay(p, add->recipes, base->recipes);
+
+    new->options = apr_hash_overlay(p, add->options, base->options);
 
     return new;
 }
@@ -125,13 +154,43 @@ static const char *set_magick_size(cmd_parms *cmd, void *dconf, const char *arg)
     return NULL;
 }
 
+static const char *add_magick_option(cmd_parms *cmd, void *dconf,
+        const char *key, const char *value)
+{
+    magick_conf *conf = dconf;
+    const char *expr_err = NULL;
+
+    magick_option *option = apr_palloc(cmd->pool, sizeof(magick_option));
+
+    option->key = strchr(key, ':');
+    if (!option->key) {
+        return apr_psprintf(cmd->pool, "Key '%s' needs a colon character", key);
+    }
+    option->format = apr_pstrndup(cmd->pool, key, option->key - key);
+    option->key++;
+     option->value = ap_expr_parse_cmd(cmd, value, AP_EXPR_FLAG_STRING_RESULT,
+            &expr_err, NULL);
+
+    if (expr_err) {
+        return apr_pstrcat(cmd->temp_pool,
+                "Cannot parse expression '", value, "': ",
+                expr_err, NULL);
+    }
+
+    apr_hash_set(conf->options, key, APR_HASH_KEY_STRING, option);
+
+    return NULL;
+}
+
 static const command_rec magick_cmds[] = {
     AP_INIT_TAKE2("AddMagickRecipe", add_magick_recipe, NULL, ACCESS_CONF,
-        "Add the named recipe to be used by the filter"), { NULL },
+        "Add the named recipe to be used by the filter"),
     AP_INIT_TAKE1("SetMagickRecipe", set_magick_recipe, NULL, ACCESS_CONF,
-        "Set the default recipe to be used by the filter"), { NULL },
+        "Set the default recipe to be used by the filter"),
     AP_INIT_TAKE1("MagickMaxSize", set_magick_size, NULL, ACCESS_CONF,
-                "Maximum size of the image processed by the magick filter")
+        "Maximum size of the image processed by the magick filter"),
+    AP_INIT_TAKE2("AddMagickOption", add_magick_option, NULL, ACCESS_CONF,
+        "Add key/value option to be used by the filter."), { NULL },
 };
 
 static apr_status_t magick_bucket_read(apr_bucket *b, const char **str,
@@ -223,6 +282,27 @@ AP_DECLARE(apr_bucket *) ap_bucket_magick_create(apr_bucket_alloc_t *list)
     return ap_bucket_magick_make(b);
 }
 
+static int magick_set_option(void *ctx, const void *key, apr_ssize_t klen, const void *val)
+{
+    magick_do *mdo = ctx;
+    const magick_option *option = val;
+
+    const char *err = NULL;
+    const char *str;
+
+    str = ap_expr_str_exec(mdo->r, option->value, &err);
+    if (err) {
+        ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, mdo->r,
+                        "Failure while evaluating the option value expression for '%s', "
+                        "option ignored: %s", mdo->r->uri, err);
+    }
+    else {
+        MagickSetImageOption(mdo->wand, option->format, option->key, str);
+    }
+
+    return 1;
+}
+
 static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 {
     request_rec *r = f->r;
@@ -298,6 +378,7 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
         unsigned char *data;
         apr_bucket *e;
         ap_bucket_magick *m;
+        magick_do mdo;
 
         /* insert wand bucket */
         e = ap_bucket_magick_create(r->connection->bucket_alloc);
@@ -307,6 +388,14 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 
         data = MagickMalloc(ctx->seen_bytes);
         apr_brigade_flatten(ctx->bb, (char *)data, &ctx->seen_bytes);
+
+        /* pass flags needed to pass through parameters from the
+         * original image.
+         */
+        mdo.r = f->r;
+        mdo.wand = m->wand;
+
+        apr_hash_do(magick_set_option, &mdo, conf->options);
 
         if (!MagickReadImageBlob(m->wand, data, size)) {
             char *description;
