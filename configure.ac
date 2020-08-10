@@ -49,12 +49,15 @@ if test "$INSTALL" = "reject"; then
 fi
 
 # Checks for libraries.
+PKG_CHECK_MODULES(apr, apr-1 >= 1.2)
+PKG_CHECK_MODULES(apu, apr-util-1 >= 1.2)
 PKG_CHECK_MODULES(GraphicsMagick, GraphicsMagick >= 1.3.0)
 PKG_CHECK_MODULES(GraphicsMagickWand, GraphicsMagickWand >= 1.3.0)
 
-CFLAGS="$CFLAGS $GraphicsMagick_CFLAGS $GraphicsMagickWand_CFLAGS"
-CPPFLAGS="$CPPFLAGS $GraphicsMagick_CFLAGS $GraphicsMagickWand_CPPFLAGS"
-LDFLAGS="$LDFLAGS $GraphicsMagick_LIBS $GraphicsMagickWand_LIBS"
+CFLAGS="$CFLAGS $apr_CFLAGS $apu_CFLAGS $GraphicsMagick_CFLAGS $GraphicsMagickWand_CFLAGS"
+CPPFLAGS="$CPPFLAGS $apr_CPPFLAGS $apu_CPPFLAGS $GraphicsMagick_CFLAGS $GraphicsMagickWand_CPPFLAGS"
+LDFLAGS="$LDFLAGS $apr_LDFLAGS $apu_LDFLAGS $GraphicsMagick_LDFLAGS $GraphicsMagickWand_LDFLAGS"
+LIBS="$LIBS $apr_LIBS $apu_LIBS $GraphicsMagick_LIBS $GraphicsMagickWand_LIBS"
 
 # Checks for header files.
 AC_CHECK_HEADERS([wand/wand_api.h], , AC_MSG_ERROR([wand/wand_api.h was not found.]))
