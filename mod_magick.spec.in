@@ -9,7 +9,18 @@ Group:     System Environment/Daemons
 Source:    https://github.com/minfrin/%{name}/releases/download/%{name}-%{version}/%{name}-%{version}.tar.bz2
 Url:       https://github.com/minfrin/%{name}
 BuildRequires: gcc, pkgconfig(apr-1), pkgconfig(apr-util-1), pkgconfig(GraphicsMagick)
-Requires:  httpd
+%if 0%{?is_opensuse}
+BuildRequires: apache2-devel
+Requires: apache2
+%else
+%if 0%{?mgaversion}
+BuildRequires: apache-devel
+Requires: apache
+%else
+BuildRequires: httpd-devel
+Requires: httpd
+%endif
+%endif
 
 %if 0%{?is_opensuse}
 %define moduledir %{_libdir}/apache2
