@@ -24,7 +24,7 @@
  *
  * <Location />
  *   <If "%{QUERY_STRING} =~ /./">
- *     SetOutputFilter MAGICK_FORMAT
+ *     SetOutputFilter MAGICK;MAGICK_FORMAT
  *     MagickFormat PNG
  *   </If>
  * </Location>

@@ -23,11 +23,9 @@
  * Basic configuration:
  *
  * <Location />
- *   <IfModule magick_strip_module>
- *     <If "%{QUERY_STRING} =~ /./">
- *       SetOutputFilter MAGICK;MAGICK_STRIP
- *     </If>
- *   </IfModule>
+ *   <If "%{QUERY_STRING} =~ /./">
+ *     SetOutputFilter MAGICK;MAGICK_STRIP
+ *   </If>
  * </Location>
  *
  * The magick strip filter has no directives, when present metadata is

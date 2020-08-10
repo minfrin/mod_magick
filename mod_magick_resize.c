@@ -98,10 +98,10 @@
  *     MagickResizeFactor 0.5
  *   </If>
  *
- * The MagickResizeModulus limits the possible image sizes so that caches are
- * not overwhelmed. All requested rows and columns are rounded up to the nearest
- * modulus value. Any calculated rows and columns value will be left unchanged
- * to keep the aspect ratio.
+ * The MagickResizeModulus directive limits the possible image sizes so that
+ * caches are not overwhelmed. All requested rows and columns are rounded up to
+ * the nearest modulus value. Any calculated rows and columns value will be left
+ * unchanged to keep the aspect ratio.
  *
  *   # Resulting width will be 300
  *   MagickResizeWidth 201
