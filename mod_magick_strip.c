@@ -30,6 +30,8 @@
  *   </IfModule>
  * </Location>
  *
+ * The magick strip filter has no directives, when present metadata is
+ * stripped.
  */
 
 #include <apr_strings.h>
