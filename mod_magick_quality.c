@@ -16,20 +16,26 @@
 
 /*
  * The Apache mod_magick_quality module provides a filter that sets the
- * output format of an image read by mod_magick.
+ * quality of the output image processed by mod_magick.
  *
  *  Author: Graham Leggett
  *
  * Basic configuration:
  *
  * <Location />
- *   <IfModule magick_quality_module>
- *     <If "%{QUERY_STRING} =~ /./">
- *       SetOutputFilter MAGICK_FORMAT
- *       MagickFormat PNG
- *     </If>
- *   </IfModule>
+ *   <If "%{QUERY_STRING} =~ /./">
+ *     SetOutputFilter MAGICK_QUALITY
+ *     MagickQuality 82
+ *   </If>
  * </Location>
+ *
+ * The MagickQuality directive provides an expression that sets the
+ * quality of the output image.
+ *
+ * In the case of JPEG images, the original quality level can be preserved
+ * by setting the following option:
+ *
+ *   AddMagickOption jpeg:preserve-settings true
  *
  */
 
