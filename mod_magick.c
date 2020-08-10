@@ -63,11 +63,8 @@ module AP_MODULE_DECLARE_DATA magick_module;
 #define DEFAULT_MAX_SIZE 10*1024*1024
 
 typedef struct magick_conf {
-    int recipe_set:1; /* has the recipe been set */
     int size_set:1; /* has the size been set */
     apr_off_t size; /* maximum image size */
-    const char *recipe; /* default recipe (if any) */
-    apr_hash_t *recipes; /* recipes by name */
     apr_hash_t *options; /* options */
 } magick_conf;
 
@@ -96,7 +93,6 @@ static void *create_magick_dir_config(apr_pool_t *p, char *dummy)
     magick_conf *new = (magick_conf *) apr_pcalloc(p, sizeof(magick_conf));
 
     new->size = DEFAULT_MAX_SIZE;
-    new->recipes = apr_hash_make(p);
     new->options = apr_hash_make(p);
 
     return (void *) new;
@@ -111,34 +107,9 @@ static void *merge_magick_dir_config(apr_pool_t *p, void *basev, void *addv)
     new->size = (add->size_set == 0) ? base->size : add->size;
     new->size_set = add->size_set || base->size_set;
 
-    new->recipe = (add->recipe_set == 0) ? base->recipe : add->recipe;
-    new->recipe_set = add->recipe_set || base->recipe_set;
-
-    new->recipes = apr_hash_overlay(p, add->recipes, base->recipes);
-
     new->options = apr_hash_overlay(p, add->options, base->options);
 
     return new;
-}
-
-static const char *add_magick_recipe(cmd_parms *cmd, void *dconf, const char *name,
-        const char *value)
-{
-    magick_conf *conf = dconf;
-
-    apr_hash_set(conf->recipes, name, APR_HASH_KEY_STRING, value);
-
-    return NULL;
-}
-
-static const char *set_magick_recipe(cmd_parms *cmd, void *dconf, const char *name)
-{
-    magick_conf *conf = dconf;
-
-    conf->recipe = name;
-    conf->recipe_set = 1;
-
-    return NULL;
 }
 
 static const char *set_magick_size(cmd_parms *cmd, void *dconf, const char *arg)
@@ -183,10 +154,6 @@ static const char *add_magick_option(cmd_parms *cmd, void *dconf,
 }
 
 static const command_rec magick_cmds[] = {
-    AP_INIT_TAKE2("AddMagickRecipe", add_magick_recipe, NULL, ACCESS_CONF,
-        "Add the named recipe to be used by the filter"),
-    AP_INIT_TAKE1("SetMagickRecipe", set_magick_recipe, NULL, ACCESS_CONF,
-        "Set the default recipe to be used by the filter"),
     AP_INIT_TAKE1("MagickMaxSize", set_magick_size, NULL, ACCESS_CONF,
         "Maximum size of the image processed by the magick filter"),
     AP_INIT_TAKE2("AddMagickOption", add_magick_option, NULL, ACCESS_CONF,
