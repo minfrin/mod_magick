@@ -24,12 +24,31 @@ Requires: httpd
 
 %if 0%{?is_opensuse}
 %define moduledir %{_libdir}/apache2
+%define includedir %{_includedir}/apache2
 %else
 %define moduledir %{_libdir}/httpd/modules
+%define includedir %{_includedir}/httpd
 %endif
 
 %description
 The Apache mod_magick filter provides image filtering for requests.
+
+%package devel
+Group: Development/Libraries
+Summary: Development tools for the mod_magick provider.
+%if 0%{?is_opensuse}
+Requires: apache2-devel
+%else
+%if 0%{?mgaversion}
+Requires: apache-devel
+%else
+Requires: httpd-devel
+%endif
+%endif
+
+%description devel
+Header file for the mod_magick filter and magick bucket used to
+manipulate image requests.
 
 %prep
 %setup -q
@@ -43,4 +62,6 @@ The Apache mod_magick filter provides image filtering for requests.
 %files
 %{moduledir}/%{name}*.so
 
+%files devel
+%{includedir}/mod_magick.h
 
