@@ -1,4 +1,9 @@
 
+Changes with v1.0.1
+
+ *) Prevent spurious warnings when handling empty bodies, such
+    as those from 304 Not Modified requests. [Graham Leggett]
+
 Changes with v1.0.0
 
  *) Initial import of mod_magick. [Graham Leggett]

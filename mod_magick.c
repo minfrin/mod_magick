@@ -81,7 +81,7 @@ typedef struct magick_do {
 
 typedef struct magick_ctx {
     apr_bucket_brigade *bb;
-    apr_bucket_brigade *tmp;
+    apr_bucket_brigade *mbb;
     apr_size_t seen_bytes;
     int seen_buckets;
     int seen_eos;
@@ -280,15 +280,16 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     apr_status_t rv = APR_SUCCESS;
     apr_size_t size;
 
+    /* Do nothing if asked to filter nothing. */
+    if (APR_BRIGADE_EMPTY(bb)) {
+        return ap_pass_brigade(f->next, bb);
+    }
+
     /* first time in? create a context */
     if (!ctx) {
         ctx = f->ctx = apr_pcalloc(r->pool, sizeof(*ctx));
         ctx->bb = apr_brigade_create(r->pool, f->c->bucket_alloc);
-    }
-
-    /* Do nothing if asked to filter nothing. */
-    if (APR_BRIGADE_EMPTY(bb)) {
-        return ap_pass_brigade(f->next, bb);
+        ctx->mbb = apr_brigade_create(r->pool, f->c->bucket_alloc);
     }
 
     while (APR_SUCCESS == rv && !APR_BRIGADE_EMPTY(bb)) {
@@ -306,8 +307,9 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
         /* A flush takes precedence over buffering */
         if (APR_BUCKET_IS_FLUSH(e)) {
 
-            /* flush makes no sense */
-            apr_bucket_delete(e);
+            /* pass the bucket across */
+            APR_BUCKET_REMOVE(e);
+            APR_BRIGADE_INSERT_TAIL(ctx->mbb, e);
 
             continue;
         }
@@ -315,8 +317,9 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
         /* metadata buckets are preserved as is */
         if (APR_BUCKET_IS_METADATA(e)) {
 
-            /* metadata makes no sense */
-            apr_bucket_delete(e);
+            /* pass the bucket across */
+            APR_BUCKET_REMOVE(e);
+            APR_BRIGADE_INSERT_TAIL(ctx->mbb, e);
 
             continue;
         }
@@ -342,42 +345,51 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     }
 
     if (ctx->seen_eos) {
-        unsigned char *data;
-        apr_bucket *e;
-        ap_bucket_magick *m;
-        magick_do mdo;
 
-        /* insert wand bucket */
-        e = ap_bucket_magick_create(r->connection->bucket_alloc);
-        APR_BRIGADE_INSERT_HEAD(bb, e);
+        /* keep the metadata and flush buckets */
+        APR_BRIGADE_PREPEND(bb, ctx->mbb);
 
-        m = e->data;
+        if (ctx->seen_bytes) {
 
-        data = MagickMalloc(ctx->seen_bytes);
-        apr_brigade_flatten(ctx->bb, (char *)data, &ctx->seen_bytes);
+            unsigned char *data;
+            apr_bucket *e;
+            ap_bucket_magick *m;
+            magick_do mdo;
 
-        /* pass flags needed to pass through parameters from the
-         * original image.
-         */
-        mdo.r = f->r;
-        mdo.wand = m->wand;
+            /* insert wand bucket */
+            e = ap_bucket_magick_create(r->connection->bucket_alloc);
+            APR_BRIGADE_INSERT_HEAD(bb, e);
 
-        apr_hash_do(magick_set_option, &mdo, conf->options);
+            m = e->data;
 
-        if (!MagickReadImageBlob(m->wand, data, size)) {
-            char *description;
-            ExceptionType severity;
+            data = MagickMalloc(ctx->seen_bytes);
+            apr_brigade_flatten(ctx->bb, (char *) data, &ctx->seen_bytes);
+            apr_brigade_cleanup(ctx->bb);
 
-            description = MagickGetException(m->wand, &severity);
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, APR_EGENERAL, r,
-                    "MagickReadImageBlob: %s (severity %d)", description,
-                    severity);
-            MagickRelinquishMemory(description);
+            /* pass flags needed to pass through parameters from the
+             * original image.
+             */
+            mdo.r = f->r;
+            mdo.wand = m->wand;
 
+            apr_hash_do(magick_set_option, &mdo, conf->options);
+
+            if (!MagickReadImageBlob(m->wand, data, ctx->seen_bytes)) {
+                char *description;
+                ExceptionType severity;
+
+                description = MagickGetException(m->wand, &severity);
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, APR_EGENERAL, r,
+                        "MagickReadImageBlob: %s (severity %d)", description,
+                        severity);
+                MagickRelinquishMemory(description);
+
+                MagickFree(data);
+                return APR_EGENERAL;
+            }
             MagickFree(data);
-            return APR_EGENERAL;
+
         }
-        MagickFree(data);
 
         /* pass what we have left down the chain */
         ap_remove_output_filter(f);
