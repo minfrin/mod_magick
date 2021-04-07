@@ -287,9 +287,13 @@ static apr_status_t magick_out_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 
     /* first time in? create a context */
     if (!ctx) {
+
         ctx = f->ctx = apr_pcalloc(r->pool, sizeof(*ctx));
         ctx->bb = apr_brigade_create(r->pool, f->c->bucket_alloc);
         ctx->mbb = apr_brigade_create(r->pool, f->c->bucket_alloc);
+
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, APR_SUCCESS, f->r,
+                "MAGICK filter enabled: %s", f->r->uri);
     }
 
     while (APR_SUCCESS == rv && !APR_BRIGADE_EMPTY(bb)) {
