@@ -14,6 +14,9 @@ dnf copr enable minfrin/mod_magick
 dnf install mod_magick
 ```
 
+Ubuntu packages are available through
+[PPA](https://launchpad.net/~minfrin/+archive/ubuntu/apache2/).
+
 - Basic configuration:
 
 ```
